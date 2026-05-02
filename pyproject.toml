@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cutebacktests"
-version = "0.2.0"
+version = "0.3.0"
 description = "Backtesting runtime for historical and intraday options strategies with DuckDB, market-data adapters, and opening-range profiles."
 readme = "README.md"
 requires-python = ">=3.9"
