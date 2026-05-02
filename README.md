@@ -2,18 +2,40 @@
   <img src="https://cutemarkets.com/blog/blog-options-data.png" alt="CuteMarkets options research illustration" width="860">
 </p>
 
-# cutebacktests
+# cutebacktests: Historical and Intraday Options Backtesting Runtime
 
-Intraday options backtesting for U.S. equities.
+Historical options backtesting, intraday options backtesting, quote-aware backtesting, and walk-forward strategy research for U.S. equities. `cutebacktests` is the public runtime behind CuteMarkets research: a DuckDB-backed options backtester, a historical options feed, market-data adapters, and an opening-range profile registry that you can run on your own machine.
 
-`cutebacktests` is the public backtesting runtime behind CuteMarkets research: a DuckDB-backed engine, named opening-range profiles, and market-data adapters for reproducible strategy work on your own machine. It keeps the research stack public and usable without shipping the private orchestration and deployment code from the internal repo.
+This repository is designed for developers and quantitative researchers who need more than chart-level ideas. It focuses on causal entry logic, historical contract reconstruction, options microstructure filters, and reproducible evaluation surfaces instead of paper-only strategy descriptions.
+
+Quick links:
+
+- [Read docs](https://cutemarkets.com/docs/cutebacktests)
+- [Get API key](https://cutemarkets.com/signup)
+- [Explore `cutemarkets-python`](https://github.com/cutemarkets/cutemarkets-python)
+- [Explore `cute-intraday-option-strats`](https://github.com/cutemarkets/cute-intraday-option-strats)
 
 ## Scope
 
-- Intraday/options backtesting runtime
+- Historical and intraday options backtest runtime
+- Historical options feed for contract reconstruction and close snapshots
+- CuteMarkets-backed market-data access for public examples and default workflows
+- Optional compatibility layers for auxiliary providers
 - Opening-range profile registry and profile helpers
-- CuteMarkets/Alpaca-backed market-data adapters used by the runtime
-- Walk-forward robustness helpers
+- Walk-forward and robustness helpers
+
+## Explore Examples
+
+- [examples/run_intraday_options_backtest.py](examples/run_intraday_options_backtest.py)
+- [examples/run_opening_range_profile.py](examples/run_opening_range_profile.py)
+- [examples/historical_options_feed_demo.py](examples/historical_options_feed_demo.py)
+- [examples/walk_forward_profile_eval.py](examples/walk_forward_profile_eval.py)
+
+## In-Repo Documentation
+
+- [docs/realism.md](docs/realism.md)
+- [docs/profile-catalog.md](docs/profile-catalog.md)
+- [docs/walk-forward.md](docs/walk-forward.md)
 
 This repository does **not** ship the congressional-disclosure engine, live/paper bots, remote server launch tooling, or phase orchestration from the private repo.
 
@@ -34,6 +56,9 @@ cp .env.example .env
 Required credentials depend on the commands you run:
 
 - `CUTEMARKETS_API_KEY`
+
+Optional compatibility workflows may also use:
+
 - `ALPACA_API_KEY`
 - `ALPACA_SECRET_KEY`
 
@@ -79,7 +104,7 @@ finally:
     store.close()
 ```
 
-If you want mixed-provider market-data surfaces, pass `alpaca_data_provider=AlpacaDataProvider(settings)` when you build the backtester.
+If you need an auxiliary provider for a private workflow, the runtime still supports that path. The public examples and the default research path in this repo use CuteMarkets directly.
 
 ## CLI
 
@@ -97,6 +122,8 @@ python -m cutebacktests.cli run-intraday-options-backtest \
   --start 2025-01-01 \
   --end 2025-12-31
 ```
+
+The public CLI uses CuteMarkets by default. Add `--with-alpaca` only if you explicitly want the auxiliary provider enabled.
 
 Run a named opening-range profile:
 
@@ -118,3 +145,5 @@ PYTHONPATH=src python -m pytest tests/test_public_surface.py -q
 
 - CuteMarkets Docs: [cutemarkets.com/docs/](https://cutemarkets.com/docs/)
 - Repository: [github.com/cutemarkets/cutebacktests](https://github.com/cutemarkets/cutebacktests)
+- Python SDK: [github.com/cutemarkets/cutemarkets-python](https://github.com/cutemarkets/cutemarkets-python)
+- Public model repo: [github.com/cutemarkets/cute-intraday-option-strats](https://github.com/cutemarkets/cute-intraday-option-strats)

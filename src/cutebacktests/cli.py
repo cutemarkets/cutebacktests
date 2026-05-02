@@ -125,18 +125,27 @@ def _base_intraday_kwargs(args: argparse.Namespace) -> Dict[str, Any]:
     }
 
 
-def _build_backtester(settings: Settings, store: DataStore) -> IntradayOptionsBacktester:
+def _build_backtester(
+    settings: Settings,
+    store: DataStore,
+    *,
+    include_alpaca: bool = False,
+) -> IntradayOptionsBacktester:
     return IntradayOptionsBacktester(
         store=store,
         cutemarkets_provider=CuteMarketsProvider(settings),
-        alpaca_data_provider=AlpacaDataProvider(settings),
+        alpaca_data_provider=AlpacaDataProvider(settings) if include_alpaca else None,
     )
 
 
 def cmd_run_intraday_options_backtest(args: argparse.Namespace, settings: Settings) -> Dict[str, Any]:
     store = DataStore(settings.db_path)
     try:
-        backtester = _build_backtester(settings=settings, store=store)
+        backtester = _build_backtester(
+            settings=settings,
+            store=store,
+            include_alpaca=bool(getattr(args, "with_alpaca", False)),
+        )
         return backtester.run(IntradayOptionsBacktestConfig(**_base_intraday_kwargs(args)))
     finally:
         store.close()
@@ -145,7 +154,11 @@ def cmd_run_intraday_options_backtest(args: argparse.Namespace, settings: Settin
 def cmd_run_opening_range_profile_backtest(args: argparse.Namespace, settings: Settings) -> Dict[str, Any]:
     store = DataStore(settings.db_path)
     try:
-        backtester = _build_backtester(settings=settings, store=store)
+        backtester = _build_backtester(
+            settings=settings,
+            store=store,
+            include_alpaca=bool(getattr(args, "with_alpaca", False)),
+        )
         profile = get_opening_range_profile(name=str(args.profile_name), or_width_min=float(args.or_width_min))
         cfg_kwargs = profile.to_intraday_strategy_kwargs()
         cfg_kwargs.update(_base_intraday_kwargs(args))
@@ -181,6 +194,19 @@ def _add_common_intraday_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--option-max-entry-bar-range-pct", type=float, default=1.0)
     parser.add_argument("--option-min-entry-price", type=float, default=0.0)
     parser.add_argument("--proxy-option-leverage", type=float, default=7.5)
+    parser.add_argument(
+        "--with-alpaca",
+        dest="with_alpaca",
+        action="store_true",
+        help="Optionally enable the auxiliary Alpaca provider. CuteMarkets remains the default data path.",
+    )
+    parser.add_argument(
+        "--without-alpaca",
+        dest="with_alpaca",
+        action="store_false",
+        help=argparse.SUPPRESS,
+    )
+    parser.set_defaults(with_alpaca=False)
     parser.add_argument("--opening-range-minutes", type=int, default=5)
     parser.add_argument("--entry-start-time", default="09:35")
     parser.add_argument("--entry-cutoff-time", default="12:00")

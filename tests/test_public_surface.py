@@ -174,6 +174,24 @@ class PublicSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(intraday_args.command, "run-intraday-options-backtest")
         self.assertEqual(profile_args.command, "run-opening-range-profile-backtest")
+        self.assertFalse(intraday_args.with_alpaca)
+        self.assertFalse(profile_args.with_alpaca)
+
+        explicit_aux = parser.parse_args(
+            ["run-intraday-options-backtest", "--start", "2025-01-01", "--end", "2025-01-02", "--with-alpaca"]
+        )
+        compatibility_alias = parser.parse_args(
+            [
+                "run-opening-range-profile-backtest",
+                "--start",
+                "2025-01-01",
+                "--end",
+                "2025-01-02",
+                "--without-alpaca",
+            ]
+        )
+        self.assertTrue(explicit_aux.with_alpaca)
+        self.assertFalse(compatibility_alias.with_alpaca)
 
     def test_public_cli_main_prints_json(self) -> None:
         fake_settings = SimpleNamespace(log_level="INFO")

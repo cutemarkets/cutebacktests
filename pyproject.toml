@@ -5,11 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cutebacktests"
 version = "0.2.0"
-description = "Intraday and options backtesting primitives with opening-range profile support."
+description = "Backtesting runtime for historical and intraday options strategies with DuckDB, market-data adapters, and opening-range profiles."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 authors = [{ name = "CuteMarkets" }]
+keywords = [
+  "backtesting",
+  "options-backtesting",
+  "intraday-trading",
+  "duckdb",
+  "quant-research",
+  "options-data",
+  "walk-forward",
+]
 dependencies = [
   "alpaca-py>=0.38.0",
   "duckdb>=1.1.0",
