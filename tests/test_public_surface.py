@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 from datetime import date, datetime, timedelta
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -176,6 +178,7 @@ class PublicSurfaceTests(unittest.TestCase):
         self.assertEqual(profile_args.command, "run-opening-range-profile-backtest")
         self.assertFalse(intraday_args.with_alpaca)
         self.assertFalse(profile_args.with_alpaca)
+        self.assertFalse(public_cli.build_parser().parse_args(["sample-option-tradability", "--end-day", "2025-01-02"]).output_dir)
 
         explicit_aux = parser.parse_args(
             ["run-intraday-options-backtest", "--start", "2025-01-01", "--end", "2025-01-02", "--with-alpaca"]
@@ -192,6 +195,18 @@ class PublicSurfaceTests(unittest.TestCase):
         )
         self.assertTrue(explicit_aux.with_alpaca)
         self.assertFalse(compatibility_alias.with_alpaca)
+        self.assertEqual(
+            parser.parse_args(
+                [
+                    "run-walk-forward-profile-backtest",
+                    "--start",
+                    "2025-01-01",
+                    "--end",
+                    "2025-01-31",
+                ]
+            ).command,
+            "run-walk-forward-profile-backtest",
+        )
 
     def test_public_cli_main_prints_json(self) -> None:
         fake_settings = SimpleNamespace(log_level="INFO")
@@ -204,6 +219,190 @@ class PublicSurfaceTests(unittest.TestCase):
         ):
             public_cli.main()
         print_mock.assert_called_once()
+
+    def test_public_cli_allows_config_backfilled_dates(self) -> None:
+        fake_settings = SimpleNamespace(log_level="INFO")
+        with patch.object(public_cli.Settings, "from_env", return_value=fake_settings), patch.object(
+            public_cli, "cmd_run_intraday_options_backtest", return_value={"status": "ok"}
+        ) as command_mock, patch("builtins.print"):
+            public_cli.main(
+                [
+                    "run-intraday-options-backtest",
+                    "--config-json",
+                    json.dumps({"start": "2025-01-01", "end": "2025-01-02", "ticker": "QQQ"}),
+                ]
+            )
+        parsed_args = command_mock.call_args[0][0]
+        self.assertEqual(parsed_args.start, "2025-01-01")
+        self.assertEqual(parsed_args.end, "2025-01-02")
+        self.assertEqual(parsed_args.ticker, "QQQ")
+
+    def test_intraday_cli_explicit_args_override_config_json(self) -> None:
+        fake_settings = SimpleNamespace(log_level="INFO")
+        with patch.object(public_cli.Settings, "from_env", return_value=fake_settings), patch.object(
+            public_cli, "cmd_run_intraday_options_backtest", return_value={"status": "ok"}
+        ) as command_mock, patch("builtins.print"):
+            public_cli.main(
+                [
+                    "run-intraday-options-backtest",
+                    "--start",
+                    "2025-01-09",
+                    "--end",
+                    "2025-01-10",
+                    "--config-json",
+                    json.dumps({"start": "2025-01-01", "end": "2025-01-02", "ticker": "QQQ"}),
+                ]
+            )
+        parsed_args = command_mock.call_args[0][0]
+        self.assertEqual(parsed_args.start, "2025-01-09")
+        self.assertEqual(parsed_args.end, "2025-01-10")
+        self.assertEqual(parsed_args.ticker, "QQQ")
+
+    def test_output_dir_writes_summary_and_trade_log_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_dir = Path(tmp_dir) / "artifacts"
+            db_path = Path(tmp_dir) / "cutebacktests.duckdb"
+            fake_settings = Settings(
+                cutemarkets_api_key="cm-key",
+                alpaca_api_key="",
+                alpaca_secret_key="",
+                cutemarkets_base_url="https://api.cutemarkets.com",
+                alpaca_paper_base_url="https://paper-api.alpaca.markets",
+                alpaca_data_base_url="https://data.alpaca.markets",
+                data_dir=Path(tmp_dir),
+                db_path=db_path,
+                log_level="INFO",
+            )
+            fake_trade_log = [
+                {
+                    "ticker": "SPY",
+                    "entered_at": datetime(2025, 1, 2, 14, 35),
+                    "pnl": 123.4,
+                }
+            ]
+            with patch.object(
+                public_cli,
+                "_run_intraday_backtest",
+                return_value=(
+                    {"trades": 1, "total_return": 0.01, "trade_log": fake_trade_log},
+                    SimpleNamespace(take_stats=lambda reset=False: {"request_count": 2}),
+                ),
+            ):
+                result = public_cli.cmd_run_intraday_options_backtest(
+                    argparse.Namespace(
+                        ticker="SPY",
+                        start="2025-01-01",
+                        end="2025-01-03",
+                        initial_equity=100000.0,
+                        risk_per_trade=0.02,
+                        max_trades_per_day=1,
+                        instrument_mode="options",
+                        option_mode="auto",
+                        option_contract_status="inactive",
+                        option_min_dte=0,
+                        option_target_dte=1,
+                        option_max_dte=7,
+                        option_min_open_interest=0,
+                        use_option_quotes_for_fills="true",
+                        option_quote_fill_fallback_to_bar_close="false",
+                        option_max_entry_spread_pct=1.0,
+                        option_max_loss_pct=0.0,
+                        option_use_contract_open_interest="false",
+                        require_option_microstructure_filter="false",
+                        option_min_entry_volume=0,
+                        option_max_entry_bar_range_pct=1.0,
+                        option_min_entry_price=0.0,
+                        proxy_option_leverage=7.5,
+                        option_slippage_bps=0.0,
+                        option_commission_per_contract=0.0,
+                        execution_entry_delay_minutes=0,
+                        execution_exit_delay_minutes=0,
+                        execution_delay_randomization="true",
+                        execution_entry_delay_jitter_minutes=2,
+                        execution_exit_delay_jitter_minutes=2,
+                        execution_delay_random_seed=42,
+                        persist_trades="true",
+                        return_trade_log="false",
+                        opening_range_minutes=5,
+                        entry_start_time="09:35",
+                        entry_cutoff_time="12:00",
+                        exit_time="15:55",
+                        strategy_variant="orb_qc",
+                        allow_long="true",
+                        allow_short="true",
+                        use_opening_bar_direction="false",
+                        require_breakout_open_inside_range="true",
+                        entry_trigger_mode="close_breakout",
+                        stop_mode="range",
+                        stop_loss_atr_distance=1.0,
+                        take_profit_rr=0.0,
+                        break_even_trigger_rr=0.0,
+                        exit_on_opposite_candle="false",
+                        opposite_candle_min_hold_minutes=0,
+                        early_fail_minutes=0,
+                        early_fail_min_rr=0.0,
+                        max_hold_minutes=0,
+                        fib_entry_level_low=0.5,
+                        fib_entry_level_high=0.618,
+                        fib_target_extension=1.444,
+                        fib_require_confirmation="true",
+                        mr_band_or_mult=1.0,
+                        mr_min_distance_from_vwap_pct=0.0,
+                        mr_reentry_buffer_or_mult=0.1,
+                        mr_stop_buffer_or_mult=0.15,
+                        mr_take_profit_mode="vwap",
+                        mr_take_profit_rr=1.0,
+                        mr_require_reversal_candle="true",
+                        mr_zscore_window=20,
+                        mr_zscore_entry=1.6,
+                        mr_zscore_reentry=0.8,
+                        mr_zscore_stop=2.4,
+                        mr_zscore_target=0.25,
+                        mr_sigma_min_pct=0.0,
+                        mr_sigma_max_pct=1.0,
+                        mr_vwap_slope_lookback=3,
+                        mr_vwap_slope_max_pct=1.0,
+                        max_positions=20,
+                        stop_loss_risk_size=0.01,
+                        stock_slippage_bps=0.0,
+                        stock_commission_per_share=0.0,
+                        require_relative_volume="true",
+                        relative_volume_min=1.0,
+                        relative_volume_lookback_days=14,
+                        require_atr_filter="false",
+                        atr_lookback_days=14,
+                        atr_min=0.0,
+                        volume_ma_window=20,
+                        volume_spike_multiple=1.2,
+                        trend_ema_fast=20,
+                        trend_ema_slow=50,
+                        require_fvg="false",
+                        require_volume_spike="false",
+                        require_trend_alignment="false",
+                        require_or_width_filter="false",
+                        opening_range_min_width_pct=0.0,
+                        opening_range_max_width_pct=1.0,
+                        require_macro_release_filter="false",
+                        macro_release_times_et="10:00",
+                        macro_post_release_block_minutes=15,
+                        require_vol_regime_filter="false",
+                        vol_regime_ticker="I:VIX1D",
+                        vol_regime_proxy_ticker="VIXY",
+                        vol_regime_min=0.0,
+                        vol_regime_max=1000.0,
+                        with_alpaca=False,
+                        output_dir=str(output_dir),
+                    ),
+                    fake_settings,
+                )
+            self.assertEqual(result["trades"], 1)
+            self.assertNotIn("trade_log", result)
+            self.assertTrue((output_dir / "summary.json").exists())
+            self.assertTrue((output_dir / "trade_log.csv").exists())
+            self.assertTrue((output_dir / "config.json").exists())
+            self.assertTrue((output_dir / "provider_stats.json").exists())
+            summary_payload = json.loads((output_dir / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(summary_payload["trades"], 1)
 
     def test_public_aliases_point_to_expected_types(self) -> None:
         self.assertIsInstance(get_opening_range_profile("c4_long_only_rr15"), OpeningRangeProfile)

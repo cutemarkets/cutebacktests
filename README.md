@@ -135,6 +135,27 @@ python -m cutebacktests.cli run-opening-range-profile-backtest \
   --end 2025-12-31
 ```
 
+Run the public walk-forward wrapper:
+
+```bash
+python -m cutebacktests.cli run-walk-forward-profile-backtest \
+  --profile-name c4_long_only_rr15 \
+  --ticker SPY \
+  --start 2025-01-01 \
+  --end 2025-12-31 \
+  --output-dir tmp/walkforward_spy
+```
+
+Audit daily options tradability before a backtest:
+
+```bash
+python -m cutebacktests.cli sample-option-tradability \
+  --ticker SPY \
+  --end-day 2025-12-31 \
+  --lookback-days 30 \
+  --output-dir tmp/tradability_spy
+```
+
 ## Tests
 
 ```bash
