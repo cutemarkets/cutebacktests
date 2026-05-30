@@ -55,6 +55,8 @@ class Settings:
     log_level: str
     alpaca_stock_feed_name: str = "sip"
     alpaca_option_feed_name: str = "opra"
+    cutemarkets_stocks_api_key: str = ""
+    cutemarkets_paper_api_key: str = ""
 
     @classmethod
     def from_env(cls, env_path: str = ".env") -> "Settings":
@@ -76,11 +78,15 @@ class Settings:
             log_level=os.getenv("LOG_LEVEL", "DEBUG"),
             alpaca_stock_feed_name=_normalize_alpaca_stock_feed(os.getenv("ALPACA_STOCK_FEED", "sip")),
             alpaca_option_feed_name=_normalize_alpaca_option_feed(os.getenv("ALPACA_OPTION_FEED", "opra")),
+            cutemarkets_stocks_api_key=os.getenv("CUTEMARKETS_STOCKS_API_KEY", os.getenv("CUTEMARKETS_API_KEY", "")),
+            cutemarkets_paper_api_key=os.getenv("CUTEMARKETS_PAPER_API_KEY", os.getenv("CUTEMARKETS_API_KEY", "")),
         )
 
     def required_keys_present(self, keys: Optional[Iterable[str]] = None) -> Dict[str, bool]:
         field_map = {
             "cutemarkets": bool(self.cutemarkets_api_key),
+            "cutemarkets_stocks": bool(self.cutemarkets_stocks_api_key or self.cutemarkets_api_key),
+            "cutemarkets_paper": bool(self.cutemarkets_paper_api_key or self.cutemarkets_api_key),
             "alpaca": bool(self.alpaca_api_key and self.alpaca_secret_key),
         }
         if keys is None:

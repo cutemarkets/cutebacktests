@@ -16,6 +16,7 @@ import cutebacktests.cli as public_cli
 from cutebacktests.backtest import IntradayOptionsBacktestConfig, IntradayOptionsBacktester
 from cutebacktests.profiles import OpeningRangeProfile, build_opening_range_profile_set, get_opening_range_profile
 from cutebacktests.providers.cutemarkets import CuteMarketsProvider
+from cutebacktests.providers.cutemarkets_paper import CuteMarketsPaperBroker
 from cutebacktests.settings import Settings
 from cutebacktests.storage import DataStore
 from cutebacktests.strategies import IntradayStrategyConfig, audit_intraday_funnel, find_intraday_setup, resolve_intraday_exit
@@ -140,6 +141,50 @@ class _PairsSessionBacktester(IntradayOptionsBacktester):
         key = (str(ticker).upper(), day)
         self.session_loads.append(key)
         return list(self._bars_by_ticker_day.get(key, []))
+
+
+class _FakeResponse:
+    def __init__(self, payload=None, status_code: int = 200):
+        self._payload = payload or {}
+        self.status_code = status_code
+        self.text = "" if status_code == 204 else json.dumps(self._payload)
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class _FakePaperSession:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append(("GET", url, kwargs))
+        if url.endswith("/accounts/"):
+            return _FakeResponse({"results": [{"id": "acct_1", "name": "demo"}]})
+        if url.endswith("/orders:by_client_order_id"):
+            return _FakeResponse({"id": "ord_by_client_id", "client_order_id": kwargs["params"]["client_order_id"]})
+        if url.endswith("/positions/"):
+            return _FakeResponse({"results": [{"symbol": "AAPL", "qty": "1"}]})
+        return _FakeResponse({"id": "acct_1"})
+
+    def post(self, url, **kwargs):
+        self.calls.append(("POST", url, kwargs))
+        if url.endswith("/orders/"):
+            payload = dict(kwargs["json"])
+            payload.setdefault("id", "ord_1")
+            return _FakeResponse(payload)
+        return _FakeResponse({"account": {"id": "acct_1", **kwargs["json"]}})
+
+    def patch(self, url, **kwargs):
+        self.calls.append(("PATCH", url, kwargs))
+        return _FakeResponse({"account": {"id": "acct_1", **kwargs["json"]}})
+
+    def delete(self, url, **kwargs):
+        self.calls.append(("DELETE", url, kwargs))
+        return _FakeResponse(status_code=204)
 
 
 class PublicSurfaceTests(unittest.TestCase):
@@ -410,6 +455,7 @@ class PublicSurfaceTests(unittest.TestCase):
         self.assertEqual(IntradayStrategyConfig.__name__, "IntradayStrategyConfig")
         self.assertEqual(IntradayOptionsBacktester.__name__, "IntradayOptionsBacktester")
         self.assertEqual(CuteMarketsProvider.__name__, "CuteMarketsProvider")
+        self.assertEqual(CuteMarketsPaperBroker.__name__, "CuteMarketsPaperBroker")
 
     def test_settings_accept_cutemarkets_env_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -418,6 +464,8 @@ class PublicSurfaceTests(unittest.TestCase):
                 "\n".join(
                     [
                         "CUTEMARKETS_API_KEY=cm-key",
+                        "CUTEMARKETS_STOCKS_API_KEY=cm-stocks",
+                        "CUTEMARKETS_PAPER_API_KEY=cm-paper",
                         "CUTEMARKETS_BASE_URL=https://api.cutemarkets.com",
                         f"CUTEBACKTESTS_DATA_DIR={Path(tmp_dir) / 'data'}",
                         "ALPACA_API_KEY=alpaca",
@@ -430,11 +478,43 @@ class PublicSurfaceTests(unittest.TestCase):
                 settings = Settings.from_env(str(env_path))
 
         self.assertEqual(settings.cutemarkets_api_key, "cm-key")
+        self.assertEqual(settings.cutemarkets_stocks_api_key, "cm-stocks")
+        self.assertEqual(settings.cutemarkets_paper_api_key, "cm-paper")
         self.assertEqual(settings.cutemarkets_base_url, "https://api.cutemarkets.com")
         self.assertEqual(
-            settings.required_keys_present(["cutemarkets", "alpaca"]),
-            {"cutemarkets": True, "alpaca": True},
+            settings.required_keys_present(["cutemarkets", "cutemarkets_stocks", "cutemarkets_paper", "alpaca"]),
+            {"cutemarkets": True, "cutemarkets_stocks": True, "cutemarkets_paper": True, "alpaca": True},
         )
+
+    def test_cutemarkets_paper_broker_uses_paper_key_and_request_bodies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            settings = Settings(
+                cutemarkets_api_key="cm-default",
+                alpaca_api_key="",
+                alpaca_secret_key="",
+                cutemarkets_base_url="https://api.cutemarkets.test",
+                alpaca_paper_base_url="https://paper-api.alpaca.markets",
+                alpaca_data_base_url="https://data.alpaca.markets",
+                data_dir=Path(tmp_dir),
+                db_path=Path(tmp_dir) / "db.duckdb",
+                log_level="INFO",
+                cutemarkets_paper_api_key="cm-paper",
+            )
+            session = _FakePaperSession()
+            broker = CuteMarketsPaperBroker(settings, session=session)
+
+            self.assertEqual(broker.list_accounts()[0]["id"], "acct_1")
+            order = broker.place_stock_order("acct_1", symbol="aapl", qty=1, side="buy", client_order_id="demo-1")
+            self.assertEqual(order["qty"], "1")
+            self.assertEqual(order["symbol"], "AAPL")
+            self.assertEqual(broker.list_positions("acct_1")[0]["symbol"], "AAPL")
+            self.assertEqual(broker.cancel_order("acct_1", "ord_1"), {})
+
+        method, url, kwargs = session.calls[1]
+        self.assertEqual(method, "POST")
+        self.assertEqual(url, "https://api.cutemarkets.test/v1/paper/accounts/acct_1/orders/")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer cm-paper")
+        self.assertEqual(kwargs["json"]["client_order_id"], "demo-1")
 
     def test_opening_range_profile_kwargs_build_intraday_config(self) -> None:
         profile = get_opening_range_profile("c4_long_only_rr15")

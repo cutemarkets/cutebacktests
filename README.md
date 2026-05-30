@@ -2,9 +2,9 @@
   <img src="https://cutemarkets.com/blog/blog-options-data.png" alt="CuteMarkets options research illustration" width="860">
 </p>
 
-# cutebacktests: Historical and Intraday Options Backtesting Runtime
+# cutebacktests: Historical Options and Stock-Mode Backtesting Runtime
 
-Historical options backtesting, intraday options backtesting, quote-aware backtesting, and walk-forward strategy research for U.S. equities. `cutebacktests` is the public runtime behind CuteMarkets research: a DuckDB-backed options backtester, a historical options feed, market-data adapters, and an opening-range profile registry that you can run on your own machine.
+Historical options backtesting, intraday options backtesting, stock-fill mode backtesting, quote-aware evaluation, and walk-forward strategy research for U.S. equities. `cutebacktests` is the public runtime behind CuteMarkets research: a DuckDB-backed backtester, a historical options feed, market-data adapters, a lightweight CuteMarkets paper API adapter, and an opening-range profile registry that you can run on your own machine.
 
 This repository is designed for developers and quantitative researchers who need more than chart-level ideas. It focuses on causal entry logic, historical contract reconstruction, options microstructure filters, and reproducible evaluation surfaces instead of paper-only strategy descriptions.
 
@@ -18,8 +18,10 @@ Quick links:
 ## Scope
 
 - Historical and intraday options backtest runtime
+- Stock-mode intraday backtests through `instrument_mode="stocks"`
 - Historical options feed for contract reconstruction and close snapshots
 - CuteMarkets-backed market-data access for public examples and default workflows
+- Lightweight CuteMarkets paper trading adapter for account/order API calls
 - Optional compatibility layers for auxiliary providers
 - Opening-range profile registry and profile helpers
 - Walk-forward and robustness helpers
@@ -27,6 +29,7 @@ Quick links:
 ## Explore Examples
 
 - [examples/run_intraday_options_backtest.py](examples/run_intraday_options_backtest.py)
+- [examples/run_intraday_stock_backtest.py](examples/run_intraday_stock_backtest.py)
 - [examples/run_opening_range_profile.py](examples/run_opening_range_profile.py)
 - [examples/historical_options_feed_demo.py](examples/historical_options_feed_demo.py)
 - [examples/walk_forward_profile_eval.py](examples/walk_forward_profile_eval.py)
@@ -56,6 +59,8 @@ cp .env.example .env
 Required credentials depend on the commands you run:
 
 - `CUTEMARKETS_API_KEY`
+- `CUTEMARKETS_STOCKS_API_KEY` for stock endpoints, falling back to `CUTEMARKETS_API_KEY`
+- `CUTEMARKETS_PAPER_API_KEY` for paper endpoints, falling back to `CUTEMARKETS_API_KEY`
 
 Optional compatibility workflows may also use:
 
@@ -106,6 +111,46 @@ finally:
 
 If you need an auxiliary provider for a private workflow, the runtime still supports that path. The public examples and the default research path in this repo use CuteMarkets directly.
 
+### Stock-Mode Backtests
+
+The intraday engine also supports stock fills using the same public signal logic. This is useful when you want to evaluate the stock expression of a profile before layering in option contract selection and option microstructure filters:
+
+```python
+result = backtester.run(
+    IntradayOptionsBacktestConfig(
+        ticker="SPY",
+        start=datetime(2025, 1, 1),
+        end=datetime(2025, 1, 31),
+        instrument_mode="stocks",
+        stock_slippage_bps=1.0,
+        stock_commission_per_share=0.0,
+        **profile.to_intraday_strategy_kwargs(),
+    )
+)
+```
+
+For a complete script, see [examples/run_intraday_stock_backtest.py](examples/run_intraday_stock_backtest.py).
+
+### CuteMarkets Paper Adapter
+
+`CuteMarketsPaperBroker` wraps the existing `/v1/paper` account, order, position, fill, and portfolio-history endpoints for small research workflows:
+
+```python
+from cutebacktests.providers import CuteMarketsPaperBroker
+
+broker = CuteMarketsPaperBroker(settings)
+accounts = broker.list_accounts()
+order = broker.place_stock_order(
+    accounts[0]["id"],
+    symbol="AAPL",
+    qty=1,
+    side="buy",
+    client_order_id="research-aapl-1",
+)
+```
+
+This adapter is intentionally not a full public paper bot. Scheduling, portfolio rules, reconciliation, and production controls remain caller-owned.
+
 ## CLI
 
 Show the public CLI:
@@ -121,6 +166,16 @@ python -m cutebacktests.cli run-intraday-options-backtest \
   --ticker SPY \
   --start 2025-01-01 \
   --end 2025-12-31
+```
+
+Run the same public signal with stock fills:
+
+```bash
+python -m cutebacktests.cli run-intraday-options-backtest \
+  --ticker SPY \
+  --start 2025-01-01 \
+  --end 2025-12-31 \
+  --instrument-mode stocks
 ```
 
 The public CLI uses CuteMarkets by default. Add `--with-alpaca` only if you explicitly want the auxiliary provider enabled.
